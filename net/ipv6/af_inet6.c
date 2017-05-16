@@ -888,9 +888,9 @@ static struct sk_buff *ipv6_gso_segment(struct sk_buff *skb,
 		ipv6h->payload_len = htons(skb->len - skb->mac_len -
 					   sizeof(*ipv6h));
 		if (proto == IPPROTO_UDP) {
-			int err = ip6_find_1stfragopt(skb, &prevhdr);
-			if (err < 0)
-				return ERR_PTR(err);
+			unfrag_ip6hlen = ip6_find_1stfragopt(skb, &prevhdr);
+			if (unfrag_ip6hlen < 0)
+				return ERR_PTR(unfrag_ip6hlen);
 			fptr = (struct frag_hdr *)(skb_network_header(skb) +
 				err);
 			fptr->frag_off = htons(offset);
