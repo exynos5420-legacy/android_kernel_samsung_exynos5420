@@ -1665,6 +1665,14 @@ static int loop_add(struct loop_device **l, int i)
 	if (!lo->lo_queue)
 		goto out_free_idr;
 
+	/*
+	 * set queue make_request_fn
+	 */
+	blk_queue_make_request(lo->lo_queue, loop_make_request);
+	lo->lo_queue->queuedata = lo;
+
+	blk_queue_max_hw_sectors(lo->lo_queue, BLK_DEF_MAX_SECTORS);
+
 	disk = lo->lo_disk = alloc_disk(1 << part_shift);
 	if (!disk)
 		goto out_free_queue;
