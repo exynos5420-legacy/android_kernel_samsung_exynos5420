@@ -2521,54 +2521,21 @@ static int packet_do_bind(struct sock *sk, const char *name, int ifindex,
                          __be16 protocol)
 {
 	struct packet_sock *po = pkt_sk(sk);
-	struct net_device *dev_curr;
-	struct net_device *dev = NULL;
 	int ret = 0;
-	bool unlisted = false;
 
 	lock_sock(sk);
 
 	spin_lock(&po->bind_lock);
-	rcu_read_lock();
 
 	if (po->fanout) {
+		if (dev)
+			dev_put(dev);
+
 		ret = -EINVAL;
 		goto out_unlock;
 	}
 
-	if (name) {
-		dev = dev_get_by_name_rcu(sock_net(sk), name);
-		if (!dev) {
-			ret = -ENODEV;
-			goto out_unlock;
-		}
-	} else if (ifindex) {
-		dev = dev_get_by_index_rcu(sock_net(sk), ifindex);
-		if (!dev) {
-			ret = -ENODEV;
-			goto out_unlock;
-		}
-	}
-
-	if (dev)
-		dev_hold(dev);
-
-	dev_curr = po->prot_hook.dev;
-
-	if (po->running) {
-		rcu_read_unlock();
-		/* prevents packet_notifier() from calling
-		 * register_prot_hook()
-		 */
-		po->num = 0;
-		__unregister_prot_hook(sk, true);
-		rcu_read_lock();
-		dev_curr = po->prot_hook.dev;
-		if (dev)
-			unlisted = !dev_get_by_index_rcu(sock_net(sk),
-							 dev->ifindex);
-	}
-	BUG_ON(po->running);
+	unregister_prot_hook(sk, true);
 	po->num = protocol;
 	po->prot_hook.type = protocol;
 	if (unlikely(unlisted)) {
