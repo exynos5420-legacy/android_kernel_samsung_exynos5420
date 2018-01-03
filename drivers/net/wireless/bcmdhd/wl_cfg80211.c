@@ -9314,23 +9314,6 @@ static s32 wl_get_assoc_ies(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 			WL_ERR(("could not get assoc resp (%d)\n", err));
 			goto exit;
 		}
-
-#ifdef QOS_MAP_SET
-		/* find qos map set ie */
-		if ((qos_map_ie = bcm_parse_tlvs(conn_info->resp_ie, conn_info->resp_ie_len,
-			DOT11_MNG_QOS_MAP_ID)) != NULL) {
-			WL_DBG((" QoS map set IE found in assoc response\n"));
-			if (!cfg->up_table) {
-				cfg->up_table = kmalloc(UP_TABLE_MAX, GFP_KERNEL);
-			}
-			wl_set_up_table(cfg->up_table, qos_map_ie);
-		}
-		else {
-			kfree(cfg->up_table);
-			cfg->up_table = NULL;
-		}
-#endif /* QOS_MAP_SET */
-	} else {
 		conn_info->resp_ie_len =
 			assoc_info.resp_len - sizeof(struct dot11_assoc_resp);
 		memcpy(conn_info->resp_ie, cfg->extra_buf,
