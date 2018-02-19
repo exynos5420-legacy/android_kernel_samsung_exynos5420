@@ -2016,6 +2016,9 @@ static int ebt_size_mwt(const struct compat_ebt_entry_mwt *match32,
 		if (match_kern)
 			match_kern->match_size = ret;
 
+		if (WARN_ON(type == EBT_COMPAT_TARGET && size_left))
+			return -EINVAL;
+
 		match32 = (struct compat_ebt_entry_mwt *) buf;
 	} while (size_left);
 
@@ -2073,12 +2076,8 @@ static int size_entry_mwt(const struct ebt_entry *entry, const unsigned char *ba
 	 * offsets are relative to beginning of struct ebt_entry (i.e., 0).
 	 */
 	for (i = 0; i < 4 ; ++i) {
-		if (offsets[i] > *total)
+		if (offsets[i] >= *total)
 			return -EINVAL;
-
-		if (i < 3 && offsets[i] == *total)
-			return -EINVAL;
-
 		if (i == 0)
 			continue;
 		if (offsets[i-1] > offsets[i])
