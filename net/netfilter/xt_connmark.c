@@ -105,9 +105,10 @@ static unsigned int knoxvpn_uidpid(struct sk_buff *skb, u_int32_t newmark)
 
 
 static unsigned int
-connmark_tg(struct sk_buff *skb, const struct xt_action_param *par)
+connmark_tg_shift(struct sk_buff *skb,
+		const struct xt_connmark_tginfo1 *info,
+		u8 shift_bits, u8 shift_dir)
 {
-	const struct xt_connmark_tginfo1 *info = par->targinfo;
 	enum ip_conntrack_info ctinfo;
 	struct nf_conn *ct;
 	u_int32_t newmark;
@@ -119,6 +120,10 @@ connmark_tg(struct sk_buff *skb, const struct xt_action_param *par)
 	switch (info->mode) {
 	case XT_CONNMARK_SET:
 		newmark = (ct->mark & ~info->ctmask) ^ info->ctmark;
+		if (shift_dir == D_SHIFT_RIGHT)
+			newmark >>= shift_bits;
+		else
+			newmark <<= shift_bits;
 		if (ct->mark != newmark) {
 			ct->mark = newmark;
 			nf_conntrack_event_cache(IPCT_MARK, ct);
@@ -126,7 +131,11 @@ connmark_tg(struct sk_buff *skb, const struct xt_action_param *par)
 		break;
 	case XT_CONNMARK_SAVE:
 		newmark = (ct->mark & ~info->ctmask) ^
-		          (skb->mark & info->nfmask);
+			  (skb->mark & info->nfmask);
+		if (shift_dir == D_SHIFT_RIGHT)
+			newmark >>= shift_bits;
+		else
+			newmark <<= shift_bits;
 		if (ct->mark != newmark) {
 			ct->mark = newmark;
 			nf_conntrack_event_cache(IPCT_MARK, ct);
@@ -135,7 +144,11 @@ connmark_tg(struct sk_buff *skb, const struct xt_action_param *par)
 		break;
 	case XT_CONNMARK_RESTORE:
 		newmark = (skb->mark & ~info->nfmask) ^
-		          (ct->mark & info->ctmask);
+			  (ct->mark & info->ctmask);
+		if (shift_dir == D_SHIFT_RIGHT)
+			newmark >>= shift_bits;
+		else
+			newmark <<= shift_bits;
 		skb->mark = newmark;
 
 // ------------- START of KNOX_VPN -----------------//
@@ -145,6 +158,23 @@ connmark_tg(struct sk_buff *skb, const struct xt_action_param *par)
 		break;
 	}
 	return XT_CONTINUE;
+}
+
+static unsigned int
+connmark_tg(struct sk_buff *skb, const struct xt_action_param *par)
+{
+	const struct xt_connmark_tginfo1 *info = par->targinfo;
+
+	return connmark_tg_shift(skb, info, 0, 0);
+}
+
+static unsigned int
+connmark_tg_v2(struct sk_buff *skb, const struct xt_action_param *par)
+{
+	const struct xt_connmark_tginfo2 *info = par->targinfo;
+
+	return connmark_tg_shift(skb, (const struct xt_connmark_tginfo1 *)info,
+				 info->shift_bits, info->shift_dir);
 }
 
 static int connmark_tg_check(const struct xt_tgchk_param *par)
@@ -193,15 +223,27 @@ static void connmark_mt_destroy(const struct xt_mtdtor_param *par)
 	nf_ct_l3proto_module_put(par->family);
 }
 
-static struct xt_target connmark_tg_reg __read_mostly = {
-	.name           = "CONNMARK",
-	.revision       = 1,
-	.family         = NFPROTO_UNSPEC,
-	.checkentry     = connmark_tg_check,
-	.target         = connmark_tg,
-	.targetsize     = sizeof(struct xt_connmark_tginfo1),
-	.destroy        = connmark_tg_destroy,
-	.me             = THIS_MODULE,
+static struct xt_target connmark_tg_reg[] __read_mostly = {
+	{
+		.name           = "CONNMARK",
+		.revision       = 1,
+		.family         = NFPROTO_UNSPEC,
+		.checkentry     = connmark_tg_check,
+		.target         = connmark_tg,
+		.targetsize     = sizeof(struct xt_connmark_tginfo1),
+		.destroy        = connmark_tg_destroy,
+		.me             = THIS_MODULE,
+	},
+	{
+		.name           = "CONNMARK",
+		.revision       = 2,
+		.family         = NFPROTO_UNSPEC,
+		.checkentry     = connmark_tg_check,
+		.target         = connmark_tg_v2,
+		.targetsize     = sizeof(struct xt_connmark_tginfo2),
+		.destroy        = connmark_tg_destroy,
+		.me             = THIS_MODULE,
+	}
 };
 
 static struct xt_match connmark_mt_reg __read_mostly = {
@@ -219,12 +261,14 @@ static int __init connmark_mt_init(void)
 {
 	int ret;
 
-	ret = xt_register_target(&connmark_tg_reg);
+	ret = xt_register_targets(connmark_tg_reg,
+				  ARRAY_SIZE(connmark_tg_reg));
 	if (ret < 0)
 		return ret;
 	ret = xt_register_match(&connmark_mt_reg);
 	if (ret < 0) {
-		xt_unregister_target(&connmark_tg_reg);
+		xt_unregister_targets(connmark_tg_reg,
+				      ARRAY_SIZE(connmark_tg_reg));
 		return ret;
 	}
 	return 0;
@@ -233,7 +277,7 @@ static int __init connmark_mt_init(void)
 static void __exit connmark_mt_exit(void)
 {
 	xt_unregister_match(&connmark_mt_reg);
-	xt_unregister_target(&connmark_tg_reg);
+	xt_unregister_target(connmark_tg_reg);
 }
 
 module_init(connmark_mt_init);
