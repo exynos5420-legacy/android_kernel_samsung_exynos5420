@@ -1352,7 +1352,8 @@ int tcp_mtu_to_mss(const struct sock *sk, int pmtu)
 	mss_now -= icsk->icsk_ext_hdr_len;
 
 	/* Then reserve room for full set of TCP options and 8 bytes of data */
-	mss_now = max(mss_now, sysctl_tcp_min_snd_mss);
+	if (mss_now < TCP_MIN_SND_MSS)
+		mss_now = TCP_MIN_SND_MSS;
 
 	/* Now subtract TCP options size, not including SACKs */
 	mss_now -= tp->tcp_header_len - sizeof(struct tcphdr);
