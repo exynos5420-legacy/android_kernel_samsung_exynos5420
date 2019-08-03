@@ -1246,10 +1246,7 @@ extern int tcp_md5_hash_skb_data(struct tcp_md5sig_pool *, const struct sk_buff 
 extern int tcp_md5_hash_key(struct tcp_md5sig_pool *hp,
 			    const struct tcp_md5sig_key *key);
 
-static inline void tcp_init_send_head(struct sock *sk)
-{
-	sk->sk_send_head = NULL;
-}
+static inline void tcp_init_send_head(struct sock *sk);
 
 /* write queue abstraction */
 static inline void tcp_write_queue_purge(struct sock *sk)
