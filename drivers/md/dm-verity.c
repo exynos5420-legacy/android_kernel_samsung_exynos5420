@@ -32,6 +32,11 @@
 #define DM_VERITY_DEFAULT_PREFETCH_SIZE	262144
 
 #define DM_VERITY_MAX_LEVELS		63
+#define DM_VERITY_MAX_CORRUPTED_ERRS	100
+
+#define DM_VERITY_OPT_LOGGING		"ignore_corruption"
+#define DM_VERITY_OPT_RESTART		"restart_on_corruption"
+#define DM_VERITY_OPT_IGN_ZEROES	"ignore_zero_blocks"
 
 static unsigned dm_verity_prefetch_cluster = DM_VERITY_DEFAULT_PREFETCH_SIZE;
 
@@ -663,6 +668,10 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 	sector_t hash_position;
 	char dummy;
 
+	static struct dm_arg _args[] = {
+		{0, 2, "Invalid number of feature args"},
+	};
+
 	v = kzalloc(sizeof(struct dm_verity), GFP_KERNEL);
 	if (!v) {
 		ti->error = "Cannot allocate verity structure";
@@ -796,6 +805,41 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 			ti->error = "Invalid salt";
 			r = -EINVAL;
 			goto bad;
+		}
+	}
+
+	argv += 10;
+	argc -= 10;
+
+	/* Optional parameters */
+	if (argc) {
+		as.argc = argc;
+		as.argv = argv;
+
+		r = dm_read_arg_group(_args, &as, &opt_params, &ti->error);
+		if (r)
+			goto bad;
+
+		while (opt_params) {
+			opt_params--;
+			opt_string = dm_shift_arg(&as);
+			if (!opt_string) {
+				ti->error = "Not enough feature arguments";
+				r = -EINVAL;
+				goto bad;
+			}
+
+			if (!strcasecmp(opt_string, DM_VERITY_OPT_LOGGING))
+				v->mode = DM_VERITY_MODE_LOGGING;
+			else if (!strcasecmp(opt_string, DM_VERITY_OPT_RESTART))
+				v->mode = DM_VERITY_MODE_RESTART;
+			else if (!strcasecmp(opt_string, DM_VERITY_OPT_IGN_ZEROES))
+				v->mode = DM_VERITY_MODE_LOGGING;
+			else {
+				ti->error = "Invalid feature arguments";
+				r = -EINVAL;
+				goto bad;
+			}
 		}
 	}
 
