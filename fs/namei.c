@@ -2604,6 +2604,15 @@ out:
 }
 EXPORT_SYMBOL(kern_path_create);
 
+void done_path_create(struct path *path, struct dentry *dentry)
+{
+	dput(dentry);
+	mutex_unlock(&path->dentry->d_inode->i_mutex);
+	mnt_drop_write(path->mnt);
+	path_put(path);
+}
+EXPORT_SYMBOL(done_path_create);
+
 struct dentry *user_path_create(int dfd, const char __user *pathname, struct path *path, int is_dir)
 {
 	char *tmp = getname(pathname);
@@ -3412,10 +3421,11 @@ SYSCALL_DEFINE5(renameat2, int, olddfd, const char __user *, oldname,
         if (flags & ~RENAME_NOREPLACE)
                 return -EINVAL;
 
-	from = user_path_parent(olddfd, oldname, &oldnd);
+	from = (char *)user_path_parent(olddfd, oldname, &oldnd, &to);
 	if (IS_ERR(from)) {
 		error = PTR_ERR(from);
 		goto exit;
+	}
 
 	error = user_path_parent(newdfd, newname, &newnd, &to);
 	if (error)

@@ -84,7 +84,6 @@
 #include <linux/msg.h>
 #include <linux/shm.h>
 #include <linux/ratelimit.h>
-#include <linux/pft.h>
 #include <linux/bpf.h>
 
 #include "avc.h"

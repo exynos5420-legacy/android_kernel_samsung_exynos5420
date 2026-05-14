@@ -867,6 +867,8 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 	ssize_t ret;
 	int halt;
 	int buffer_len = !io_data->read ? io_data->len : round_up(io_data->len, 1024);
+	int len =0;
+	int read=0;
 
  	pr_debug("%s: len %zu, buffer_len %d, read %d\n", __func__, len, buffer_len, read);
  	if (atomic_read(&epfile->error))
