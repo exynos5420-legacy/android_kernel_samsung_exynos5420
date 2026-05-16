@@ -2300,13 +2300,13 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
 #ifdef CONFIG_FRONTSWAP
 	enable_swap_info(p, prio, swap_map, frontswap_map);
 
-	printk(KERN_INFO "Adding %uk swap on %s.  "
-			"Priority:%d extents:%d across:%lluk %s%s%s\n",
-		p->pages<<(PAGE_SHIFT-10), name, p->prio,
-		nr_extents, (unsigned long long)span<<(PAGE_SHIFT-10),
-		(p->flags & SWP_SOLIDSTATE) ? "SS" : "",
-		(p->flags & SWP_DISCARDABLE) ? "D" : "",
-		(frontswap_map) ? "FS" : "");
+	// printk(KERN_INFO "Adding %uk swap on %s.  "
+	// 		"Priority:%d extents:%d across:%lluk %s%s%s\n",
+	// 	p->pages<<(PAGE_SHIFT-10), name, p->prio,
+	// 	nr_extents, (unsigned long long)span<<(PAGE_SHIFT-10),
+	// 	(p->flags & SWP_SOLIDSTATE) ? "SS" : "",
+	// 	(p->flags & SWP_DISCARDABLE) ? "D" : "",
+	// 	(frontswap_map) ? "FS" : "");
 
 #else
 	enable_swap_info(p, prio, swap_map);

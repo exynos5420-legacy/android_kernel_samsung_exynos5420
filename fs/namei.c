@@ -152,10 +152,9 @@ getname_flags(const char __user *filename, int flags, int *empty)
 	if (unlikely(!len)) {
 		if (empty)
 			*empty = 1;
-		if (retval != -ENOENT || !(flags & LOOKUP_EMPTY)) {
-			__putname(result);
-			return ERR_PTR(retval);
-		}
+		err = ERR_PTR(-ENOENT);
+		if (!(flags & LOOKUP_EMPTY))
+			goto error;
 	}
 
 	err = ERR_PTR(-ENAMETOOLONG);
@@ -3425,7 +3424,7 @@ SYSCALL_DEFINE5(renameat2, int, olddfd, const char __user *, oldname,
         if (flags & ~RENAME_NOREPLACE)
                 return -EINVAL;
 
-	from = (char *)user_path_parent(olddfd, oldname, &oldnd, &to);
+	from = user_path_parent(olddfd, oldname, &oldnd);
 	if (IS_ERR(from)) {
 		error = PTR_ERR(from);
 		goto exit;
