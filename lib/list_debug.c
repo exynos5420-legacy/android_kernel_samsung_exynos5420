@@ -69,7 +69,7 @@ void __list_del_entry(struct list_head *entry)
 		"list_del corruption. next->prev should be %p, "
 		"but was %p\n", entry, next->prev)) {
                 if (list_debug)
-                        BUG();
+                        WARN("list_debug: panic on corruption\n");
 		return;
 	}
 
