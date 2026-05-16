@@ -38,6 +38,18 @@
 #define DM_VERITY_OPT_RESTART		"restart_on_corruption"
 #define DM_VERITY_OPT_IGN_ZEROES	"ignore_zero_blocks"
 
+enum verity_mode {
+	DM_VERITY_MODE_EIO,
+	DM_VERITY_MODE_LOGGING,
+	DM_VERITY_MODE_RESTART,
+	DM_VERITY_MODE_PANIC
+};
+
+enum verity_block_type {
+	DM_VERITY_BLOCK_TYPE_DATA,
+	DM_VERITY_BLOCK_TYPE_METADATA
+};
+
 static unsigned dm_verity_prefetch_cluster = DM_VERITY_DEFAULT_PREFETCH_SIZE;
 
 module_param_named(prefetch_cluster, dm_verity_prefetch_cluster, uint, S_IRUGO | S_IWUSR);
@@ -64,6 +76,8 @@ struct dm_verity {
 	unsigned digest_size;	/* digest size for the current hash algorithm */
 	unsigned shash_descsize;/* the size of temporary space for crypto */
 	int hash_failed;	/* set to 1 if hash of any block failed */
+	enum verity_mode mode;	/* mode for handling verification errors */
+	unsigned corrupted_errs;/* Number of errors for corrupted blocks */
 
 	mempool_t *io_mempool;	/* mempool of struct dm_verity_io */
 	mempool_t *vec_mempool;	/* mempool of bio vector */
@@ -658,10 +672,26 @@ static void verity_dtr(struct dm_target *ti)
  *	<digest>
  *	<salt>		Hex string or "-" if no salt.
  */
+/*
+ * Target parameters:
+ *	<version>	The current format is version 1.
+ *			Vsn 0 is compatible with original Chromium OS releases.
+ *	<data device>
+ *	<hash device>
+ *	<data block size>
+ *	<hash block size>
+ *	<the number of data blocks>
+ *	<hash start block>
+ *	<algorithm>
+ *	<digest>
+ *	<salt>		Hex string or "-" if no salt.
+ */
 static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 {
 	struct dm_verity *v;
-	unsigned num;
+	struct dm_arg_set as;
+	const char *opt_string;
+	unsigned int num, opt_params;
 	unsigned long long num_ll;
 	int r;
 	int i;
@@ -686,14 +716,14 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 		goto bad;
 	}
 
-	if (argc != 10) {
-		ti->error = "Invalid argument count: exactly 10 arguments required";
+	if (argc < 10) {
+		ti->error = "Not enough arguments";
 		r = -EINVAL;
 		goto bad;
 	}
 
-	if (sscanf(argv[0], "%d%c", &num, &dummy) != 1 ||
-	    num < 0 || num > 1) {
+	if (sscanf(argv[0], "%u%c", &num, &dummy) != 1 ||
+	    num > 1) {
 		ti->error = "Invalid version";
 		r = -EINVAL;
 		goto bad;
@@ -720,7 +750,7 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 		r = -EINVAL;
 		goto bad;
 	}
-	v->data_dev_block_bits = ffs(num) - 1;
+	v->data_dev_block_bits = __ffs(num);
 
 	if (sscanf(argv[4], "%u%c", &num, &dummy) != 1 ||
 	    !num || (num & (num - 1)) ||
@@ -730,7 +760,7 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 		r = -EINVAL;
 		goto bad;
 	}
-	v->hash_dev_block_bits = ffs(num) - 1;
+	v->hash_dev_block_bits = __ffs(num);
 
 	if (sscanf(argv[5], "%llu%c", &num_ll, &dummy) != 1 ||
 	    (sector_t)(num_ll << (v->data_dev_block_bits - SECTOR_SHIFT))
@@ -844,7 +874,7 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 	}
 
 	v->hash_per_block_bits =
-		fls((1 << v->hash_dev_block_bits) / v->digest_size) - 1;
+		__fls((1 << v->hash_dev_block_bits) / v->digest_size);
 
 	v->levels = 0;
 	if (v->data_blocks)
@@ -907,7 +937,9 @@ static int verity_ctr(struct dm_target *ti, unsigned argc, char **argv)
 	}
 
 	/* WQ_UNBOUND greatly improves performance when running on ramdisk */
-	v->verify_wq = alloc_workqueue("kverityd", WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM | WQ_UNBOUND, num_online_cpus());
+	v->verify_wq = alloc_workqueue("kverityd",
+				       WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND,
+				       num_online_cpus());
 	if (!v->verify_wq) {
 		ti->error = "Cannot allocate workqueue";
 		r = -ENOMEM;
