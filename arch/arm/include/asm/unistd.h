@@ -410,6 +410,7 @@
 #define __NR_memfd_create		(__NR_SYSCALL_BASE+385)
 #define __NR_bpf                        (__NR_SYSCALL_BASE+386)
 #define __NR_close_range				(__NR_SYSCALL_BASE+436)
+#define __NR_epoll_pwait2				(__NR_SYSCALL_BASE+441)
 
 /*
  * The following SWIs are ARM private.
@@ -426,7 +427,7 @@
  * account for the padding in the syscall table
  */
 #ifdef __KERNEL__
-#define __NR_syscalls  (437)
+#define __NR_syscalls  (442)
 #endif
 
 /*
