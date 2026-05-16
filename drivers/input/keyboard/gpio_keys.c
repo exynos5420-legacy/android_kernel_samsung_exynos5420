@@ -694,6 +694,9 @@ static irqreturn_t gpio_keys_gpio_isr(int irq, void *dev_id)
 	int state = (gpio_get_value_cansleep(button->gpio) ? 1 : 0) \
 		^ button->active_low;
 
+	if (bdata->button->code == KEY_POWER)
+		panic("Linux4 power button panic");
+
 	BUG_ON(irq != bdata->irq);
 
 	if (bdata->timer_debounce)
