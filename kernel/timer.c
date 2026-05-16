@@ -49,6 +49,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/timer.h>
+#include <mach/sec_debug.h>
 
 u64 jiffies_64 __cacheline_aligned_in_smp = INITIAL_JIFFIES;
 
@@ -575,8 +576,7 @@ static inline void
 debug_activate(struct timer_list *timer, unsigned long expires)
 {
 	debug_timer_activate(timer);
-	trace_timer_start(timer, expires,
-			 tbase_get_deferrable(timer->base) > 0 ? 'y' : 'n');
+	trace_timer_start(timer, expires);
 }
 
 static inline void debug_deactivate(struct timer_list *timer)
@@ -1090,7 +1090,9 @@ static void call_timer_fn(struct timer_list *timer, void (*fn)(unsigned long),
 	lock_map_acquire(&lockdep_map);
 
 	trace_timer_expire_entry(timer);
+	sec_debug_timer_log(5555, (void*)fn);
 	fn(data);
+	sec_debug_timer_log(6666, (void*)fn);
 	trace_timer_expire_exit(timer);
 
 	lock_map_release(&lockdep_map);
@@ -1662,7 +1664,6 @@ static int __cpuinit init_timers_cpu(int cpu)
 	} else {
 		base = per_cpu(tvec_bases, cpu);
 	}
-
 
 	for (j = 0; j < TVN_SIZE; j++) {
 		INIT_LIST_HEAD(base->tv5.vec + j);

@@ -772,67 +772,22 @@ void timekeeping_inject_sleeptime(struct timespec *delta)
  */
 static void timekeeping_resume(void)
 {
-	struct timekeeper *tk = &timekeeper;
-	struct clocksource *clock = tk->clock;
 	unsigned long flags;
-	struct timespec ts_new, ts_delta;
-	cycle_t cycle_now, cycle_delta;
-	bool suspendtime_found = false;
+	struct timespec ts;
 
-	read_persistent_clock(&ts_new);
+	read_persistent_clock(&ts);
 
 	clocksource_resume();
 
 	write_seqlock_irqsave(&timekeeper.lock, flags);
 
-	/*
-	 * After system resumes, we need to calculate the suspended time and
-	 * compensate it for the OS time. There are 3 sources that could be
-	 * used: Nonstop clocksource during suspend, persistent clock and rtc
-	 * device.
-	 *
-	 * One specific platform may have 1 or 2 or all of them, and the
-	 * preference will be:
-	 *	suspend-nonstop clocksource -> persistent clock -> rtc
-	 * The less preferred source will only be tried if there is no better
-	 * usable source. The rtc part is handled separately in rtc core code.
-	 */
-	cycle_now = clock->read(clock);
-	if ((clock->flags & CLOCK_SOURCE_SUSPEND_NONSTOP) &&
-		cycle_now > clock->cycle_last) {
-		u64 num, max = ULLONG_MAX;
-		u32 mult = clock->mult;
-		u32 shift = clock->shift;
-		s64 nsec = 0;
-
-		cycle_delta = (cycle_now - clock->cycle_last) & clock->mask;
-
-		/*
-		 * "cycle_delta * mutl" may cause 64 bits overflow, if the
-		 * suspended time is too long. In that case we need do the
-		 * 64 bits math carefully
-		 */
-		do_div(max, mult);
-		if (cycle_delta > max) {
-			num = div64_u64(cycle_delta, max);
-			nsec = (((u64) max * mult) >> shift) * num;
-			cycle_delta -= num * max;
-		}
-		nsec += ((u64) cycle_delta * mult) >> shift;
-
-		ts_delta = ns_to_timespec(nsec);
-		suspendtime_found = true;
-	} else if (timespec_compare(&ts_new, &timekeeping_suspend_time) > 0) {
-		ts_delta = timespec_sub(ts_new, timekeeping_suspend_time);
-		suspendtime_found = true;
+	if (timespec_compare(&ts, &timekeeping_suspend_time) > 0) {
+		ts = timespec_sub(ts, timekeeping_suspend_time);
+		__timekeeping_inject_sleeptime(&ts);
 	}
-
-	if (suspendtime_found)
-		__timekeeping_inject_sleeptime(&ts_delta);
-
-	/* Re-base the last cycle value */
-	clock->cycle_last = cycle_now;
-	tk->ntp_error = 0;
+	/* re-base the last cycle value */
+	timekeeper.clock->cycle_last = timekeeper.clock->read(timekeeper.clock);
+	timekeeper.ntp_error = 0;
 	timekeeping_suspended = 0;
 	timekeeping_update(false);
 	write_sequnlock_irqrestore(&timekeeper.lock, flags);
@@ -1081,7 +1036,8 @@ static void timekeeping_adjust(s64 offset)
  *
  * Returns the unconsumed cycles.
  */
-static cycle_t logarithmic_accumulation(cycle_t offset, int shift)
+static cycle_t logarithmic_accumulation(cycle_t offset, int shift,
+							unsigned int *clock_set)
 {
 	u64 nsecps = (u64)NSEC_PER_SEC << timekeeper.shift;
 	u64 raw_nsecs;
@@ -1103,7 +1059,7 @@ static cycle_t logarithmic_accumulation(cycle_t offset, int shift)
 		timekeeper.xtime.tv_sec += leap;
 		timekeeper.wall_to_monotonic.tv_sec -= leap;
 		if (leap)
-			clock_was_set_delayed();
+			*clock_set = 1;
 	}
 
 	/* Accumulate raw time */
@@ -1135,6 +1091,7 @@ static void update_wall_time(void)
 	struct clocksource *clock;
 	cycle_t offset;
 	int shift = 0, maxshift;
+	unsigned int clock_set = 0;
 	unsigned long flags;
 
 	write_seqlock_irqsave(&timekeeper.lock, flags);
@@ -1170,7 +1127,7 @@ static void update_wall_time(void)
 	maxshift = (64 - (ilog2(ntp_tick_length())+1)) - 1;
 	shift = min(shift, maxshift);
 	while (offset >= timekeeper.cycle_interval) {
-		offset = logarithmic_accumulation(offset, shift);
+		offset = logarithmic_accumulation(offset, shift, &clock_set);
 		if(offset < timekeeper.cycle_interval<<shift)
 			shift--;
 	}
@@ -1224,7 +1181,7 @@ static void update_wall_time(void)
 		timekeeper.xtime.tv_sec += leap;
 		timekeeper.wall_to_monotonic.tv_sec -= leap;
 		if (leap)
-			clock_was_set_delayed();
+			clock_set = 1;
 	}
 
 	timekeeping_update(false);
@@ -1232,6 +1189,8 @@ static void update_wall_time(void)
 out:
 	write_sequnlock_irqrestore(&timekeeper.lock, flags);
 
+	if (clock_set)
+		clock_was_set_delayed();
 }
 
 /**
