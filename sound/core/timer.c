@@ -503,6 +503,32 @@ static int snd_timer_stop1(struct snd_timer_instance *timeri, bool stop)
 	int result = 0;
 	unsigned long flags;
 
+	if (timeri == NULL || ticks < 1)
+		return -EINVAL;
+	if (timeri->flags & SNDRV_TIMER_IFLG_SLAVE) {
+		result = snd_timer_start_slave(timeri);
+		snd_timer_notify1(timeri, SNDRV_TIMER_EVENT_START);
+		return result;
+	}
+	timer = timeri->timer;
+	if (timer == NULL)
+		return -EINVAL;
+	spin_lock_irqsave(&timer->lock, flags);
+	timeri->ticks = timeri->cticks = ticks;
+	timeri->pticks = 0;
+	result = snd_timer_start1(timer, timeri, ticks);
+	spin_unlock_irqrestore(&timer->lock, flags);
+	snd_timer_notify1(timeri, SNDRV_TIMER_EVENT_START);
+	return result;
+}
+
+/* stop/pause a master timer */
+static int snd_timer_stop1(struct snd_timer_instance *timeri, bool stop)
+{
+	struct snd_timer *timer;
+	int result = 0;
+	unsigned long flags;
+
 	timer = timeri->timer;
 	if (!timer)
 		return -EINVAL;
@@ -588,7 +614,6 @@ int snd_timer_stop(struct snd_timer_instance *timeri)
 	else
 		return snd_timer_stop1(timeri, true);
 }
-
 /*
  * start again..  the tick is kept.
  */

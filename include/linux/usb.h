@@ -361,6 +361,18 @@ struct usb_bus {
 #endif
 };
 
+
+/**
+ * usb_endpoint_maxp - get endpoint's max packet size
+ * @epd: endpoint to be checked
+ *
+ * Returns @epd's max packet
+ */
+static inline int usb_endpoint_maxp(const struct usb_endpoint_descriptor *epd)
+{
+	return __le16_to_cpu(epd->wMaxPacketSize);
+}
+
 /* ----------------------------------------------------------------------- */
 
 /* This is arbitrary.
