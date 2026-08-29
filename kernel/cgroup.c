@@ -27,6 +27,7 @@
  */
 
 #include <linux/cgroup.h>
+#include <linux/capability.h>
 #include <linux/cred.h>
 #include <linux/ctype.h>
 #include <linux/errno.h>
@@ -271,7 +272,14 @@ EXPORT_SYMBOL_GPL(cgroup_is_descendant);
 /* bits in struct cgroupfs_root flags field */
 enum {
 	ROOT_NOPREFIX, /* mounted subsystems have no named prefix */
+	ROOT_CPUSET_V2_MODE, /* preserve requested cpuset masks on hotplug */
 };
+
+bool cgroup_cpuset_v2_mode(const struct cgroup *cgrp)
+{
+	return cgrp &&
+		test_bit(ROOT_CPUSET_V2_MODE, &cgrp->root->flags);
+}
 
 static int cgroup_is_releasable(const struct cgroup *cgrp)
 {
@@ -1076,6 +1084,8 @@ static int cgroup_show_options(struct seq_file *seq, struct dentry *dentry)
 		seq_show_option(seq, ss->name, NULL);
 	if (test_bit(ROOT_NOPREFIX, &root->flags))
 		seq_puts(seq, ",noprefix");
+	if (test_bit(ROOT_CPUSET_V2_MODE, &root->flags))
+		seq_puts(seq, ",cpuset_v2_mode");
 	if (strlen(root->release_agent_path))
 		seq_show_option(seq, "release_agent",
 				root->release_agent_path);
@@ -1140,6 +1150,14 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 		if (!strcmp(token, "noprefix")) {
 			set_bit(ROOT_NOPREFIX, &opts->flags);
 			continue;
+		}
+		if (!strcmp(token, "cpuset_v2_mode")) {
+#ifdef CONFIG_CPUSETS
+			set_bit(ROOT_CPUSET_V2_MODE, &opts->flags);
+			continue;
+#else
+			return -ENOENT;
+#endif
 		}
 		if (!strcmp(token, "clone_children")) {
 			opts->clone_children = true;
@@ -1228,6 +1246,12 @@ static int parse_cgroupfs_options(char *data, struct cgroup_sb_opts *opts)
 	if (test_bit(ROOT_NOPREFIX, &opts->flags) &&
 	    (opts->subsys_bits & mask))
 		return -EINVAL;
+
+#ifdef CONFIG_CPUSETS
+	if (test_bit(ROOT_CPUSET_V2_MODE, &opts->flags) &&
+	    opts->subsys_bits != (1UL << cpuset_subsys_id))
+		return -EINVAL;
+#endif
 
 
 	/* Can't specify "none" and some subsystems */
@@ -2211,19 +2235,11 @@ retry_find_task:
 		tcred = __task_cred(tsk);
 		if (cred->euid &&
 		    cred->euid != tcred->uid &&
-		    cred->euid != tcred->suid) {
-			/*
-			 * if the default permission check fails, give each
-			 * cgroup a chance to extend the permission check
-			 */
-			struct cgroup_taskset tset = { };
-			tset.single.task = tsk;
-			tset.single.cgrp = cgrp;
-			ret = cgroup_allow_attach(cgrp, &tset);
-			if (ret) {
-				rcu_read_unlock();
-				goto out_unlock_cgroup;
-			}
+		    cred->euid != tcred->suid &&
+		    !capable(CAP_SYS_NICE)) {
+			rcu_read_unlock();
+			cgroup_unlock();
+			return -EACCES;
 		}
 	} else
 		tsk = current;
